@@ -45,14 +45,22 @@ async function main() {
     console.log("✅ Socket.IO server running");
 
     // 7️⃣ Initialize Kafka (producer + consumer)
-    await initKafka();
-    console.log("✅ Kafka producer + consumer connected");
+    try {
+      await initKafka();
+      console.log("✅ Kafka producer + consumer connected");
+    } catch (err) {
+      console.log("⚠️ Kafka unavailable, running without Kafka");
+    }
 
     // 8️⃣ Graceful shutdown
     process.on("SIGINT", async () => {
       console.log("🔌 Gracefully shutting down...");
-      await consumer.disconnect();
-      await producer.disconnect();
+      try {
+        await consumer.disconnect();
+        await producer.disconnect();
+      } catch (err) {
+        console.log("Kafka already disconnected");
+      }
       process.exit(0);
     });
   } catch (err) {
