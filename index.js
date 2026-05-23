@@ -5,7 +5,6 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 import helmet from "helmet";
-// import rateLimit from "express-rate-limit";
 
 import { connectDB } from "./src/config/db/connect-db.js";
 import { initKafka, producer, consumer } from "./src/config/kafka/kafka.js";
@@ -20,42 +19,48 @@ async function main() {
     // 1️⃣ Connect to MongoDB
     await connectDB();
 
-    // 2️⃣ Initialize Kafka
-    await initKafka();
-
-    // 3️⃣ Setup Express
+    // 2️⃣ Setup Express
     const app = express();
     const server = http.createServer(app);
 
     app.use(express.json());
     app.use(cors());
     app.use(helmet());
-    // Optional rate limiter
-    // app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
-    // 4️⃣ Public Routes
+    // 3️⃣ Public + protected routes
     app.use("/api/v1/auth", authRoutes);
-
-    // 5️⃣ Protected Routes
     app.use("/api/v1/group", authMiddleware, groupChatRoutes);
 
-    // 6️⃣ Health check
+    // 4️⃣ check api working
     app.get("/", (_req, res) => res.send("🚀 KonvoApp API online!"));
 
-    // 7️⃣ Start server
+    // 5️⃣ Start HTTP server
     const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
       console.log(`🚀 Server listening at http://localhost:${PORT}`);
     });
 
-    // 8️⃣ Start WebSocket server (with Kafka consumer inside)
+    // 6️⃣ Start WebSocket server
     await startWebSocket(server);
+    console.log("✅ Socket.IO server running");
 
-    // 9️⃣ Graceful shutdown
+    // 7️⃣ Initialize Kafka (producer + consumer)
+    try {
+      await initKafka();
+      console.log("✅ Kafka producer + consumer connected");
+    } catch (err) {
+      console.log("⚠️ Kafka unavailable, running without Kafka");
+    }
+
+    // 8️⃣ Graceful shutdown
     process.on("SIGINT", async () => {
       console.log("🔌 Gracefully shutting down...");
-      await consumer.disconnect();
-      await producer.disconnect();
+      try {
+        await consumer.disconnect();
+        await producer.disconnect();
+      } catch (err) {
+        console.log("Kafka already disconnected");
+      }
       process.exit(0);
     });
   } catch (err) {

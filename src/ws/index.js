@@ -1,56 +1,39 @@
-import { WebSocketServer } from "ws";
+// src/ws/index.js
+import { Server as IOServer } from "socket.io";
 import { consumer } from "../config/kafka/kafka.js";
 import GroupChatMessage from "../models/groupChat/index.js";
 
-export default async function startWebSocket(server) {
-  const wss = new WebSocketServer({ server });
+let io;
 
-  wss.on("connection", (ws) => {
-    console.log("✅ WebSocket client connected");
-    ws.on("close", () => console.log("🔌 WebSocket client disconnected"));
+export default async function startWebSocket(server) {
+  io = new IOServer(server, {
+    path: "/socket.io",
+    cors: { origin: "*" },
   });
 
+  io.on("connection", (socket) => {
+    console.log("✅ Socket.IO client connected");
+    socket.on("disconnect", () =>
+      console.log("🔌 Socket.IO client disconnected")
+    );
+  });
+
+  // subscribe & consume...
   await consumer.subscribe({ topic: "group-messages", fromBeginning: false });
   await consumer.run({
     eachMessage: async ({ message }) => {
-      let parsed;
-      try {
-        parsed = JSON.parse(message.value.toString());
-      } catch (err) {
-        console.error("⚠️ Invalid Kafka payload:", err);
-        return;
-      }
-
-      const { sender, content } = parsed;
-
-      try {
-        // store `sender` string directly
-        const savedMsg = await GroupChatMessage.create({
-          senderId: sender,
-          senderName: sender,
-          content,
-        });
-
-        const payload = {
-          event: "newMessage",
-          data: {
-            _id: savedMsg._id,
-            senderName: savedMsg.senderName,
-            content: savedMsg.content,
-            timestamp: savedMsg.timestamp,
-          },
-        };
-
-        wss.clients.forEach((client) => {
-          if (client.readyState === client.OPEN) {
-            client.send(JSON.stringify(payload));
-          }
-        });
-      } catch (err) {
-        console.error("⚠️ Error saving/broadcasting message:", err);
-      }
+      const { sender, content } = JSON.parse(message.value.toString());
+      const savedMsg = await GroupChatMessage.create({ sender, content }); //save msgs in db
+      io.emit("newMessage", {
+        _id: savedMsg._id,
+        sender: savedMsg.sender,
+        content: savedMsg.content,
+        timestamp: savedMsg.timestamp,
+      });
     },
   });
 
-  console.log("✅ WebSocket + Kafka consumer running");
+  console.log("✅ Socket.IO + Kafka consumer running");
 }
+
+export { io };
